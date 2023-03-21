@@ -1,0 +1,522 @@
+                    VHDL      "ROM_blank_modificada_s7.vhd", "picocode_s7.vhd", "picocode_s7"
+
+
+RECEIVED_BYTE       DSIN      $00                 ; temperatura MS byte con mode 13
+SW                  DSIN      $01                 ; temperatura MS byte con mode 13
+COMB_CIRCUIT        DSIN      $02
+
+DIGITO0             DSOUT     $00
+DIGITO1             DSOUT     $01
+DIGITO2             DSOUT     $02
+DIGITO3             DSOUT     $03
+DIGITO4             DSOUT     $04
+DIGITO5             DSOUT     $05
+DIGITO6             DSOUT     $06
+DIGITO7             DSOUT     $07                 ; - si es negativo el numero
+COMB_CIRCUIT_OUT    DSOUT     $08
+DATA_TX             DSOUT     $09
+CTRL                DSOUT     $0A
+LEDS_UNIDADES		DSOUT	  $0B				  ; leds para las unidades
+LEDS_DECENAS		DSOUT	  $0C				  ; leds para las decenas
+
+; posicion de memoria 5 l counter para diferenciar las interrupciones -> no usar
+; posicion de memoria 1 2 3 usadas en el binary to bdc -> no usar
+; posicion de memoria 4 usada para guardar el modo en este primer boceto -> no usar
+; 13 bit = 0       16 bit = 1
+
+BEGIN:              IN        sF, 0
+START:              CALL      reset
+                    IN        sE, $01
+                    COMP      sE, sF
+                    JUMP      C, change_to_13     ; cambiamos a modo 13 bit
+                    JUMP      Z, no_change
+                    JUMP      change_to_16        ; como no es ni menor ni igual, se es 1 y sf es 0
+
+
+wait_13:            COMP      s1, 0
+                    JUMP      NZ, bit13mode
+                    JUMP      wait_13
+
+wait_16:            COMP      s1, 0
+                    JUMP      NZ, bit16mode
+                    JUMP      wait_16
+
+
+
+
+bit16mode:          LOAD      sD, 0
+                    OUT       sD, $07
+                    LOAD      s2, s0              ; copiamos el entero a s2
+                    LOAD      s3, s1              ; copiamos el decimal a s3
+                    AND       s2, 128             ; comprobamos el bit signo en s2
+                    SL0       s0                  ; dejamos hueco a la derecha del todo eliminando el bit signo
+                    AND       s3, 128             ; aislamos en s3 el bit mas a la izquierda del segundo byte q pertenece a la parte entera
+                    RL        s3                  ; rotamos a la izquierda el s3 para dejar el bit s3[7] en s3[0]
+                    OR        s0, s3              ; tenemos en s0 toda la parte entera
+                    SL0       s1                  ; eliminamos el bit q pertenece a la parte entera
+                    SR0       s1                  ; dejamos los 7 bits de la parte decimal a la derecha
+                    COMP      s2, 128
+                    CALL      Z, esnegativo16     ; tenemos en s0 la parte entera y en s1 la parte decimal
+                    LOAD      s7, s1              ; pasamos a s7 la parte decimal q esta en s1
+                    CALL      binary2BCD          ; convertimos el numero en el registro s0 (parte entera en bcd para luego pasarselo al combinational para representarlo en placa)
+                    FETCH     s0, 1               ; valor de las centenas
+                    OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s0, $06             ; lo sacamos por el digito
+                    FETCH     s0, 2               ; decenas
+                    OUT		  s0, $0C			  ; ponemos en los leds las decenas
+                    OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s0, $05             ; lo sacamos por el digito
+                    FETCH     s0, 3               ; unidades
+                    OUT		  s0, $0B			  ; ponemos en los leds las unidades
+                    OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    ADD       s0, 1               ; añadirle el punto decimal
+                    OUT       s0, $04             ; lo sacamos por el digito
+                    LOAD      s0, s7              ; pasamos a s0 los decimales q estan en s7 para no cambiar
+
+                    LOAD      s1, s0              ; voy a dividir los 4 bits decimales en dos
+                    AND       s1, 1
+                    LOAD      s3, 0
+                    LOAD      s4, 0
+                    COMP      s1, 1
+; a partir de aqui hay q cambiar los valores porque esta es para convertir los decimales del 13mode, hay q poner los valores del 16mode
+                    JUMP      C, dec216
+                    ADD       s4, 78
+                    ADD       s3, 0               ; sumo 6 para los otros dos digtios
+dec216:             LOAD      s1, s0
+                    AND       s1, $02
+                    COMP      s1, $02
+                    JUMP      C, dec316
+                    ADD       s4, 56
+                    ADD       s3, 1
+                    CALL      sumation            ; sumation comprueba si en s4 hay un numero mayor que 100 para pasarle 1 al s3
+dec316:             LOAD      s1, s0
+                    AND       s1, $04
+                    COMP      s1, $04
+                    JUMP      C, dec416
+                    ADD       s4, 12
+                    ADD       s3, 3
+                    CALL      sumation
+dec416:             LOAD      s1, s0
+                    AND       s1, $08
+                    COMP      s1, $08
+                    JUMP      C, dec516
+                    ADD       s4, 24
+                    ADD       s3, 6               ; tenemo en s4 los dos ulitmos digitos y en s3 los dos penultimos
+                    CALL      sumation            ; sumation comprueba si en s4 hay un numero mayor que 100 para pasarle 1 al s3
+dec516:             LOAD      s1, s0
+                    AND       s1, 16
+                    COMP      s1, 16
+                    JUMP      C, dec616
+                    ADD       s4, 48
+                    ADD       s3, 12
+                    CALL      sumation            ; sumation comprueba si en s4 hay un numero mayor que 100 para pasarle 1 al s3
+dec616:             LOAD      s1, s0
+                    AND       s1, 32
+                    COMP      s1, 32
+                    JUMP      C, dec716
+                    ADD       s4, 96
+                    ADD       s3, 24
+                    CALL      sumation
+dec716:             LOAD      s1, s0
+                    AND       s1, 64
+                    COMP      s1, 64
+                    JUMP      C, decfin16
+                    ADD       s4, 92
+                    ADD       s3, 49
+                    CALL      sumation
+decfin16:           LOAD      s0, s3              ; el binary2bcd tiene q tener el numero a pasar en el s0
+                    CALL      binary2BCD
+                    FETCH     s5, 2               ; aqui cargamos el valor de las decenas de s3, que sera el digito 3
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $03             ; lo sacamos por el digito
+                    FETCH     s5, 3               ; aqui cargamos el valor de las dunidades de s3, que sera el digito 2
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $02             ; lo sacamos por el digito
+                    LOAD      s0, s4              ; el binary2bcd tiene q tener el numero a pasar en el s0
+                    CALL      binary2BCD
+                    FETCH     s5, 2               ; aqui cargamos el valor de las decenas de s4, que sera el digito 1
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $01             ; lo sacamos por el digito
+                    FETCH     s5, 3               ; aqui cargamos el valor de las unidades de s4, que sera el digito 0
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $00             ; lo sacamos por el digito
+                    JUMP      START
+
+
+
+bit13mode:          LOAD      sD, 0
+                    OUT       sD, $07
+                    LOAD      s2, s0
+                    AND       s2, 128             ; s1 tiene la parte decimal
+                    SR0       s1                  ; librarnos de los 3 bits q no valen
+                    SR0       s1
+                    SR0       s1
+                    LOAD      s3, s1
+                    AND       s3, 16              ; aislamos bit 5 q es de la parte entera
+                    SR0       s3                  ; lo ponemos en la primera posicion
+                    SR0       s3
+                    SR0       s3
+                    SR0       s3                  ; s3 tiene el ultimo bit de la parte entera
+                    AND       s1, $0F             ; aislamos en s1 la parte decimal, tenemos en s1 el decimal
+                    SL0       s0                  ; borramos de s0 el bit signo q ya esta en s2 para dejar espacio para el bit de s3
+                    OR        s0, s3              ; tenemos en s0 el entero completo
+                    COMP      s2, 128
+                    CALL      Z, esnegativo13     ; por aqui ya tendriamos que haber recibido el segundo byte, pero con switches no nos daria tiempo a leer uno y uno asiq para las pruebas leemos los dos a la vex
+                    LOAD      s7, s1              ; copiamos en s7 el decimal q esta en s1
+                    LOAD      s2, 0               ; limpiamos s2 para la subrutina
+                    CALL      binary2BCD          ; convertimos el numero en el registro s0 (parte entera en bcd para luego pasarselo al combinational para representarlo en placa)
+                    FETCH     s0, 1               ; valor de las centenas	
+					OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s0, $06             ; lo sacamos por el digito
+                    FETCH     s0, 2               ; decenas
+                    OUT		  s0, $0C			  ; ponemos en los leds las decenas
+                    OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s0, $05             ; lo sacamos por el digito
+                    FETCH     s0, 3               ; unidades
+                    OUT 	  s0, $0B			  ; ponemos en las leds las unidades
+                    OUT       s0, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s0, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    ADD       s0, 1               ; añadirle el punto decimal
+                    OUT       s0, $04             ; lo sacamos por el digito
+                    LOAD      s0, s7              ; pasamos a s0 los decimales q estan en s1 para no cambiar
+
+                    LOAD      s1, s0              ; voy a dividir los 4 bits decimales en dos
+                    AND       s1, 1               ; de forma que sume por un ladolos 06 12 25 y 50
+                    LOAD      s3, 0               ; y del otro lado 25 50
+                    LOAD      s4, 0
+                    COMP      s1, 1
+                    JUMP      C, dec213
+                    ADD       s4, 25
+                    ADD       s3, 6               ; sumo 6 para los otros dos digtios
+dec213:             LOAD      s1, s0
+                    AND       s1, $02
+                    COMP      s1, $02
+                    JUMP      C, dec313
+                    ADD       s4, 50
+                    ADD       s3, 12
+dec313:             LOAD      s1, s0
+                    AND       s1, $04
+                    COMP      s1, $04
+                    JUMP      C, dec413
+                    ADD       s3, 25
+dec413:             LOAD      s1, s0
+                    AND       s1, $08
+                    COMP      s1, $08
+                    JUMP      C, decfin13
+                    ADD       s3, 50              ; tenemos en s4 los dos ulitmos digitos y en s3 los dos penultimos
+decfin13:           LOAD      s0, s3              ; el binary2bcd tiene q tener el numero a pasar en el s0
+                    CALL      binary2BCD
+                    FETCH     s5, 2               ; aqui cargamos el valor de las decenas de s3, que sera el digito 3
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $03             ; lo sacamos por el digito
+                    FETCH     s5, 3               ; aqui cargamos el valor de las dunidades de s3, que sera el digito 2
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $02             ; lo sacamos por el digito
+                    LOAD      s0, s4              ; el binary2bcd tiene q tener el numero a pasar en el s0
+                    CALL      binary2BCD
+                    FETCH     s5, 2               ; aqui cargamos el valor de las decenas de s4, que sera el digito 1
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $01             ; lo sacamos por el digito
+                    FETCH     s5, 3               ; aqui cargamos el valor de las unidades de s4, que sera el digito 0
+                    OUT       s5, $08             ; lo sacamos al combinational
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    AND       s0, s0              ; operacion para hacer tiempo por si acaso
+                    IN        s5, $02             ; leemos lo q venga del combinational q esta listo para representar en placa
+                    OUT       s5, $00             ; lo sacamos por el digito
+                    EINT      
+                    JUMP      START
+
+
+esnegativo13:       LOAD      s3, 2
+                    OUT       s3, $07             ; sacamos el menos
+                    XOR       s1, $FF
+                    ADD       s1, 1               ; 2'complement parte decimal
+                    LOAD      s3, 0
+                    ADDC      s3, 0
+                    XOR       s0, $FF
+                    AND       s1, $0F
+                    ADD       s0, s3              ; ya tenemos los dos en 2'complement, el decimal en s1 y el entero en s0
+                    RET                           ; volvemos a donde llamamos a la subrutina
+
+esnegativo16:       LOAD      s3, 2
+                    OUT       s3, $07             ; sacamos el menos
+                    XOR       s1, $FF
+                    ADD       s1, 1               ; 2'complement parte decimal
+                    LOAD      s3, 0
+                    ADDC      s3, 0
+                    XOR       s0, $FF
+                    AND       s1, $0F
+                    ADD       s0, s3              ; ya tenemos los dos en 2'complement, el decimal en s0 y el entero en s2
+                    RET                           ; volvemos a donde llamamos a la subrutina
+
+reset:              LOAD      s0, 0
+                    LOAD      s1, 0
+                    LOAD      s2, 0
+                    LOAD      s3, 0
+                    LOAD      s4, 0
+                    LOAD      s5, 0
+                    LOAD      s6, 0
+                    LOAD      s7, 0
+                    LOAD      s8, 0
+                    LOAD      s9, 0
+                    LOAD      sA, 0
+                    LOAD      sB, 0
+                    LOAD      sC, 0
+                    EINT      
+                    RET       
+
+change_to_13:       LOAD      sD, 1
+                    STORE     sD, 8               ; en posicion 8 indicamos con 1 q hay q escribir las cosas para cambiar a 13 bit mode
+                    LOAD      sF, 0
+                    JUMP      wait_13
+
+change_to_16:       LOAD      sD, 2
+                    STORE     sD, 8               ; en posicion 8 indicamos con 2 q hay q escribir las cosas para cambiar a 16 bit mode
+                    LOAD      sF, 1
+                    JUMP      wait_16
+
+no_change:          LOAD      sD, 0
+                    STORE     sD, 8
+                    COMP      sF, 1
+                    JUMP      Z, wait_16
+                    JUMP      wait_13
+
+sumation:           COMP      s4, 100
+                    RET       C                   ; si s4 es menor que 100 no hay q hacer nada
+                    SUB       s4, 100
+                    ADD       s3, 1
+                    RET       
+
+
+binary2BCD:         LOAD      s2, 0
+                    LOAD      s1, s0
+INIT:               COMP      s0, 100
+                    JUMP      C, LESS100
+                    SUB       s0, 100
+                    ADD       s2, 1
+                    JUMP      INIT
+LESS100:            STORE     s2, 1               ; en la memoria 1 guardamos el digito 6
+                    LOAD      s2, 0
+                    LOAD      s1, s0
+OPE10:              COMP      s0, 10
+                    JUMP      C, LESS10
+                    SUB       s0, 10
+                    ADD       s2, 1
+                    JUMP      OPE10
+LESS10:             STORE     s2, 2               ; en la memoria 2 guardamos el digito 5
+                    LOAD      s2, 0
+                    LOAD      s1, s0
+OPE1:               COMP      s0, 1
+                    JUMP      C, FIN1
+                    SUB       s0, 1
+                    ADD       s2, 1
+                    JUMP      OPE1
+FIN1:               STORE     s2, 3               ; en la memoria 3 guardamos el digito 4
+                    RET       
+
+
+
+; s0 y s1 prohibidos para las interrupciones
+; sA Y SB usados para interrupciones
+
+
+isr:                FETCH     sB, 8
+                    COMP      sB, 1
+                    JUMP      Z, write_to_13
+                    COMP      sB, 2
+                    JUMP      Z, write_to_16
+                    COMP      sA, 4
+                    JUMP      Z, etapa_cinco
+                    COMP      sA, 9
+                    JUMP      Z, etapa_s1_cinco
+                    COMP      sA, 1
+                    JUMP      Z, etapa_dos
+                    COMP      sA, 2
+                    JUMP      Z, etapa_tres
+                    COMP      sA, 3
+                    JUMP      Z, etapa_cuatro
+                    COMP      sA, 5
+                    JUMP      Z, etapa_s1
+                    COMP      sA, 6
+                    JUMP      Z, etapa_s1_dos
+                    COMP      sA, 7
+                    JUMP      Z, etapa_s1_tres
+                    COMP      sA, 8
+                    JUMP      Z, etapa_s1_cuatro
+                    COMP      sA, 10
+                    JUMP      Z, write_to_13_dos
+                    COMP      sA, 11
+                    JUMP      Z, write_to_13_tres
+                    COMP      sA, 12
+                    JUMP      Z, write_to_16_dos
+                    COMP      sA, 13
+                    JUMP      Z, write_to_16_tres
+
+etapa_uno:          LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 150
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 1
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_dos:          LOAD      sB, 4               ; ack  00000100
+                    OUT       sB, $0A
+                    LOAD      sB, $00             ; address del registro MSB
+                    OUT       sB, $09             ; data
+                    LOAD      sA, 2
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_tres:         LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 151
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 3
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_cuatro:       LOAD      sB, 6               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 255
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 4
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_cinco:        IN        s0, $00
+                    LOAD      sA, 5
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_s1:           LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 150
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 6
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_s1_dos:       LOAD      sB, 4               ; ack  00000100
+                    OUT       sB, $0A
+                    LOAD      sB, $01             ; address del registro MSB
+                    OUT       sB, $09             ; data
+                    LOAD      sA, 7
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_s1_tres:      LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 151
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 8
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_s1_cuatro:    LOAD      sB, 6               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 255
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 9
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+etapa_s1_cinco:     IN        s1, $00
+                    LOAD      sA, 0
+                    STORE     sA, 7
+                    RETI      DISABLE
+
+
+write_to_13:        LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 150
+                    OUT       sB, $09             ; address
+                    LOAD      SB, 0
+                    STORE     SB, 8
+                    LOAD      sA, 10
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+write_to_13_dos:    LOAD      sB, 4               ; ack  00000100
+                    OUT       sB, $0A
+                    LOAD      sB, $03             ; address del registro MSB
+                    OUT       sB, $09             ; data
+                    LOAD      sA, 11
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+write_to_13_tres:   LOAD      sB, 6               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 0
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 0
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+write_to_16:        LOAD      sB, 5               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 150
+                    OUT       sB, $09             ; address
+                    LOAD      SB, 0
+                    STORE     SB, 8
+                    LOAD      sA, 12
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+write_to_16_dos:    LOAD      sB, 4               ; ack  00000100
+                    OUT       sB, $0A
+                    LOAD      sB, $03             ; address del registro MSB
+                    OUT       sB, $09             ; data
+                    LOAD      sA, 13
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+write_to_16_tres:   LOAD      sB, 6               ; start y ack  00000101
+                    OUT       sB, $0A
+                    LOAD      sB, 128
+                    OUT       sB, $09             ; address
+                    LOAD      sA, 0
+                    STORE     sA, 7
+                    RETI      ENABLE
+
+                    ORG       $3FF                ; aqui tendremos varias posibilidades de interrupcion que identificaremos por un ctr
+                    JUMP      isr
+                    END       
