@@ -8,7 +8,7 @@ The real test of the embedded system will be carried out using the Digilent Nexy
 which contains an XC7A100T-CSG324-1 FPGA, from the Xilinx Artix 7 family.
 The development of the project was as follows:
 
-## Step 0
+### Step 0
 
 Design of the assigned embedded system on paper, including the elaboration of
 a flow diagram, the decisions about which functions are going to be
