@@ -2,7 +2,7 @@
 In this project, we design and implement an embedded system based on the
 Xilinx Picoblaze microprocessor, which will at least include a complex peripheral.
 
-SPECIFICATIONS:
+**SPECIFICATIONS:**
 Medium-complexity application based on the Picoblaze 3 microprocessor.
 The real test of the embedded system will be carried out using the Digilent Nexys 4 DDR board,
 which contains an XC7A100T-CSG324-1 FPGA, from the Xilinx Artix 7 family.
@@ -16,16 +16,16 @@ implemented using hardware and which ones will be developed in software
 (HW/SW partitioning), and the design of a block diagram of the whole
 embedded system.
 
-## Step 1
+### Step 1
 
 Design and simulation of the embedded system software program in assembler
 using Mediatronix pBlazeIDE tool.
 
-## Step 2
+### Step 2
 
 Simulation of the embedded microprocessor (hardware + software) in Vivado.
 
-## Step 3
+### Step 3
 
 Design and simulation of the complete basic embedded system based on the
 Picoblaze microprocessor (embedded microprocessor with software +
@@ -36,6 +36,6 @@ of time to execute, students must perform the complete behavioural simulation
 and, at least, a short timing simulation to check that the embedded system
 appears to work correctly.
 
-## Step 4
+### Step 4
 Board test of the complete basic embedded system based on the Picoblaze
 microprocessor (embedded microprocessor with software + peripherals).
