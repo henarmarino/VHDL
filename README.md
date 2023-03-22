@@ -36,7 +36,6 @@ of time to execute, students must perform the complete behavioural simulation
 and, at least, a short timing simulation to check that the embedded system
 appears to work correctly.
 
-• Step 4
-
-o Board test of the complete basic embedded system based on the Picoblaze
+## Step 4
+Board test of the complete basic embedded system based on the Picoblaze
 microprocessor (embedded microprocessor with software + peripherals).
